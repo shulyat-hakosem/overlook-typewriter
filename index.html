@@ -668,9 +668,10 @@ function spawnKind(k){return k==='boy'?spawnBoy():k==='wendy'?spawnWendy():k==='
 // spots in painting coords [x, floor y, px/m]: foot of the stairs, the stair landing, under the landing by the window
 const TWIN_SPOTS=[[168,630,152],[612,602,140],[500,268,104],[335,505,128],[276,566,138]];
 function twinsSpot(){
- const cs=carShown(),pL=stX+cs*fs-6,pR=stX+(cs+PW)*fs+6,pT=stY+(MOB?262:200)*fs,pB=stY+560*fs;
+ const cs=MOB?carShown():carXT,pL=stX+cs*fs-6,pR=stX+(cs+PW)*fs+6,pT=stY+(MOB?262:200)*fs,pB=stY+560*fs;
  // carriage-return lever arm at rest, sampled in screen px, plus the on-screen buttons: the twins must not overlap any of it
- const pc=cs+PW/2,lev=[];for(const la of[0])for(let i=0;i<=12;i++){const u=i/12,qx=-120*u*u-120*u*(1-u),qy=-80*u*u-20*u*(1-u),cx=Math.cos(la)*qx-Math.sin(la)*qy,cy=Math.sin(la)*qx+Math.cos(la)*qy;lev.push([stX+(pc-412+cx)*fs,stY+(452+cy)*fs,(i==12?14:6)*fs])}
+ const pc=cs+PW/2,lev=[[stX+(pc-438)*fs,stY+489*fs,36*fs],[stX+(pc+438)*fs,stY+489*fs,36*fs]]; // carriage target (not mid-slide): lever arm + platen knobs
+ for(const la of[0])for(let i=0;i<=12;i++){const u=i/12,qx=-120*u*u-120*u*(1-u),qy=-80*u*u-20*u*(1-u),cx=Math.cos(la)*qx-Math.sin(la)*qy,cy=Math.sin(la)*qx+Math.cos(la)*qy;lev.push([stX+(pc-412+cx)*fs,stY+(452+cy)*fs,(i==12?14:6)*fs])}
  let second=null;const btns=[...document.querySelectorAll('#ui button')].map(e=>e.getBoundingClientRect()).filter(r=>r.width>0);
  for(const [x,y,k] of TWIN_SPOTS){const X=bx+x*bs,Y=by+y*bs,hw=(SPR.twins?.4:.62)*k*bs,ht=(SPR.twins?1.3:1.45)*k*bs;
   const onScreen=X-hw>4&&X+hw<W-4&&Y-ht>4&&Y<H-4;const underPaper=X+hw>pL&&X-hw<pR&&Y>pT&&Y-ht<pB;
