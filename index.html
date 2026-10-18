@@ -60,6 +60,7 @@ canvas{position:absolute;left:0;top:0;display:block}
 #app.mob.land #kbd{right:auto;top:auto;left:calc(66px + env(safe-area-inset-left));bottom:calc(10px + env(safe-area-inset-bottom))}
 #app.touch:not(.mob) #kbd{right:128px}#app.touch:not(.mob) #pdf{right:184px}
 #app.touch #ti{pointer-events:none}#app.touch.kbon #ti{pointer-events:auto}
+#flash{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 55% 25%,#fff 0,#f4f7ff 45%,#e2eaff 100%)}
 #demoTag{position:absolute;left:22px;bottom:14px;font-size:11px;opacity:.5;letter-spacing:.2em}
 /* ---- phone frame ---- */
 #app.mob #title{left:calc(14px + env(safe-area-inset-left));top:calc(12px + env(safe-area-inset-top));font-size:9px;letter-spacing:.26em}
@@ -87,7 +88,7 @@ canvas{position:absolute;left:0;top:0;display:block}
  <div id="stage"><div id="paperView"><div id="tilt"><div id="sheet"></div></div></div></div>
  <canvas id="fg"></canvas>
  <textarea id="ti" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" enterkeyhint="enter" rows="1" aria-label="Type on the typewriter"></textarea>
- <div id="grain"></div><div id="vig"></div>
+ <div id="grain"></div><div id="vig"></div><div id="flash"></div>
  <div id="ui">
   <div id="title"><b>OVERLOOK</b>COLORADO LOUNGE · WINTER</div>
   <div id="hint">click &amp; type · English / עברית</div>
@@ -133,7 +134,7 @@ const CAL={windows:[[734,94,1195,516],[828,0,1094,94],[556,62,718,250],[618,345,
  stairs:{floor:[118,620],bottom:[250,603],top:[474,276],landing:[548,262],kBottom:142,kTop:108},snowBox:[520,-30,1255,540],imgRect:[-44,-25,1688,950],slope:0,par:.25,
  occluders:[[[1050,497],[1094,469],[1640,469],[1640,727],[1050,727]]]};
 try{const o=JSON.parse(Q.get('cal')||'null');if(o)Object.assign(CAL,o)}catch(e){}
-function actorPos(a){if(a.type==='wendy')return wendyPos(a);if(!bgImg){const p=P(a.X,0,a.Z);return[p[0],p[1],F/a.Z]}
+function actorPos(a){if(a.type==='wendy')return wendyPos(a);if(a.type==='twins')return[a.x,a.y,a.k];if(!bgImg){const p=P(a.X,0,a.Z);return[p[0],p[1],F/a.Z]}
  const c=a.type==='boy'?CAL.boy:CAL.woman;const sx=800+a.X*c.k;return[sx,c.y+(sx-800)*CAL.slope,c.k]}
 function onRug(a){if(!bgImg)return Math.abs(a.X)<RUG.x1-.05&&a.Z>RUG.z0&&a.Z<RUG.z1;const sx=actorPos(a)[0];return sx>CAL.rug[0]&&sx<CAL.rug[1]}
 
@@ -587,6 +588,17 @@ function startRoll(){
   swell(){},pan(){},
   stop(){const t=AC.currentTime;g.gain.setTargetAtTime(0,t,.15);setTimeout(()=>{try{s.stop();o.stop();am.stop()}catch(e){}g.disconnect()},1200)}};
 }
+function startTwinsAudio(){
+ if(!AC)return null;const o=AC.createGain();o.gain.value=0;o.connect(sfx);o.connect(revIn);const t0=AC.currentTime;o.gain.linearRampToValueAtTime(.05,t0+1.8);
+ // thin, wavering high pair (an unsettling held interval)
+ const osc=[[880,0],[932.3,3],[1318.5,-4]].map(([f,dt_])=>{const s=AC.createOscillator();s.type='sine';s.frequency.value=f;s.detune.value=dt_;const v=AC.createOscillator();v.frequency.value=rand(4.5,5.5);const vg=AC.createGain();vg.gain.value=4;v.connect(vg);vg.connect(s.frequency);v.start();s.connect(o);s.start();return[s,v]});
+ return{strike(){const t=AC.currentTime;o.gain.cancelScheduledValues(t);o.gain.setTargetAtTime(0,t,.05);
+   // crack, then a rolling rumble
+   nz(t,.18,{type:'highpass',f:2500,g:.55});nz(t,.35,{type:'bandpass',f:900,Q:.7,g:.5});tone(t,.5,{f:70,fEnd:30,g:.5,type:'sawtooth'});
+   for(let i=0;i<7;i++){const tt=t+.25+i*rand(.22,.4);nz(tt,rand(.8,1.6),{type:'lowpass',f:rand(140,320),g:rand(.25,.5)*(1-i/9),a:.08})}
+   nz(t+.2,3.4,{type:'lowpass',f:110,g:.45,a:.4})},
+  stop(){const t=AC.currentTime;o.gain.setTargetAtTime(0,t,.1);setTimeout(()=>{try{osc.forEach(([s,v])=>{s.stop();v.stop()})}catch(e){}o.disconnect()},1500)}};
+}
 function startWendyAudio(){
  if(!AC)return null;const p=AC.createStereoPanner?AC.createStereoPanner():null;const o=AC.createGain();o.gain.value=1;if(p){o.connect(p);p.connect(sfx)}else o.connect(sfx);o.connect(revIn);
  // tense high string cluster with tremolo, swelling while she climbs
@@ -641,16 +653,44 @@ function wendyState(a){const S=CAL.stairs;let t=a.t,last=null;
  return{...last,done:true}}
 function wendyPos(a){const w=a.ws||wendyState(a);return[w.x,w.y,w.k]}
 function spawnWendy(){if(actors.length||!bgImg)return false;actors.push({type:'wendy',t:0,ws:null,phase:0,snd:startWendyAudio(),stepN:0});lastKind='wendy';flickerBoost=.8;return true}
-const KINDS=['woman','boy','wendy'];
-function spawnKind(k){return k==='boy'?spawnBoy():k==='wendy'?spawnWendy():spawnWoman()}
+const KINDS=['woman','boy','wendy','twins'];
+function spawnKind(k){return k==='boy'?spawnBoy():k==='wendy'?spawnWendy():k==='twins'?spawnTwins():spawnWoman()}
+/* ---- the Grady twins: fade in, stand still staring, gone in a lightning strike ---- */
+// spots in painting coords [x, floor y, px/m]: foot of the stairs, the stair landing, under the landing by the window
+const TWIN_SPOTS=[[168,630,152],[612,602,140],[500,268,104],[335,505,128]];
+function twinsSpot(){
+ const cs=carShown(),pL=stX+cs*fs-6,pR=stX+(cs+PW)*fs+6,pT=stY+(MOB?262:200)*fs,pB=stY+560*fs;
+ for(const [x,y,k] of TWIN_SPOTS){const X=bx+x*bs,Y=by+y*bs,hw=.62*k*bs,ht=1.45*k*bs;
+  const onScreen=X-hw>4&&X+hw<W-4&&Y-ht>4&&Y<H-4;const underPaper=X+hw>pL&&X-hw<pR&&Y>pT&&Y-ht<pB;
+  if(onScreen&&!underPaper)return[x,y,k]}
+ return TWIN_SPOTS[0]}
+const RM_FLASH=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const TW={IN:1.6,STRIKE:6.2,GONE:6.55,END:8.2};
+function spawnTwins(){if(actors.length||!bgImg)return false;const [x,y,k]=twinsSpot();
+ actors.push({type:'twins',t:0,x,y,k,struck:false,snd:startTwinsAudio()});lastKind='twins';flickerBoost=.6;return true}
+// flash envelope: at most two flashes ~0.35 s apart, then a long fade (no strobing); reduced motion: one soft flash
+function flashLevel(t){const d=t-TW.STRIKE;if(d<0)return 0;
+ if(RM_FLASH)return d<.25?.4*d/.25:Math.max(0,.4*(1-(d-.25)/1.3));
+ if(d<.06)return .75*d/.06;if(d<.2)return .75*(1-(d-.06)/.14)*.85+.1;if(d<.35)return .1+.9*(d-.2)/.15;return Math.max(0,1-(d-.35)/1.4)}
+let boltLv=0,bolt=null;
+function makeBolt(){const pts=[];let x=rand(640,1180),y=-30;const br=[];while(y<430){const nx=x+rand(-38,38),ny=y+rand(22,46);pts.push([x,y,nx,ny]);if(Math.random()<.18&&y>40){let bx2=nx,by2=ny;const dir=Math.random()<.5?-1:1;for(let i=0;i<4;i++){const ex=bx2+dir*rand(10,34),ey=by2+rand(14,30);br.push([bx2,by2,ex,ey]);bx2=ex;by2=ey}}x=nx;y=ny}return pts.concat(br)}
+function drawBolt(x,ox,oy){
+ x.save();x.globalAlpha=Math.min(1,boltLv);x.fillStyle=`rgba(235,242,255,${.55*boltLv})`;x.fillRect(400+ox,-60+oy,1000,640);
+ if(bolt&&!RM_FLASH){x.lineCap='round';x.lineJoin='round';for(const [w,col] of [[9,'rgba(170,200,255,.35)'],[3.2,'rgba(255,255,255,.95)']]){x.strokeStyle=col;x.lineWidth=w;x.beginPath();for(const [a,b,c2,d] of bolt){x.moveTo(a+ox,b+oy);x.lineTo(c2+ox,d+oy)}x.stroke()}}
+ x.restore()}
+function twinsAlpha(a){if(a.t<TW.IN)return easeOut(a.t/TW.IN)*.97;if(a.t<TW.GONE)return .97;return 0}
+
 let demoIdx=0;
 function scheduleNext(first){clearTimeout(evTimer);const d=EV_FIRST!==null&&first?EV_FIRST:DEMO?(first?1500:6500):first?rand(8000,15000):rand(20000,45000);
  evTimer=setTimeout(()=>{if(actors.length){scheduleNext();return}
   // first event is always the ghost; afterwards a random character that isn't the one just seen (demo: fixed rotation)
-  let k;if(first)k='woman';else if(DEMO){k=KINDS[(KINDS.indexOf(lastKind)+1)%3]}else{const o=KINDS.filter(x=>x!==lastKind);k=o[Math.random()*o.length|0]}
+  let k;if(first)k='woman';else if(DEMO){k=KINDS[(KINDS.indexOf(lastKind)+1)%KINDS.length]}else{const o=KINDS.filter(x=>x!==lastKind);k=o[Math.random()*o.length|0]}
   if(!spawnKind(k))spawnKind(k==='boy'?'woman':'boy')},d)}
 function updateActors(dt){
  for(let i=actors.length-1;i>=0;i--){const a=actors[i];
+  if(a.type==='twins'){a.t+=dt;const fl=flashLevel(a.t);flashEl.style.opacity=fl.toFixed(3);boltLv=fl;
+   if(!a.struck&&a.t>=TW.STRIKE){a.struck=true;bolt=makeBolt();flickerBoost=2.4;if(a.snd)a.snd.strike();}
+   if(a.t>=TW.END){flashEl.style.opacity=0;boltLv=0;bolt=null;if(a.snd)a.snd.stop();actors.splice(i,1);scheduleNext()}continue}
   if(a.type==='wendy'){a.t+=dt;const w=wendyState(a);a.ws=w;a.phase+=dt*(w.paused?0:w.kind==='floor'?3.4:2.9);
    const sn=Math.floor(a.phase/Math.PI);if(sn!==a.stepN&&!w.paused){a.stepN=sn;if(a.snd)a.snd.step(w.kind==='floor'?.7:1,(w.x-800)/800)}
    if(a.snd)a.snd.pan((w.x-800)/800);
@@ -691,13 +731,13 @@ function buildPaintTex(){const mk=(col,n,seed)=>{const c=document.createElement(
   for(let i=0;i<1400;i++){x.fillStyle=col.replace('A',(r()*.10).toFixed(3));x.fillRect(r()*192,r()*192,1,1)}return c};
  texDark=mk('rgba(50,24,12,A)',520,5);texLight=mk('rgba(255,236,205,A)',380,9)}
 function drawActorPainted(c,a,t){
- const [sx,gy,k]=actorPos(a);const tall=a.type==='boy'?1.05:a.type==='wendy'?2.3:1.95,half=a.type==='boy'?.8:a.type==='wendy'?.95:.75;
+ const [sx,gy,k]=actorPos(a);const tall=a.type==='boy'?1.05:a.type==='wendy'?2.3:a.type==='twins'?1.45:1.95,half=a.type==='boy'?.8:a.type==='wendy'?.95:a.type==='twins'?.7:.75;
  const x0=sx-half*k,y0=gy-tall*k,w=half*2*k,h=(tall+.12)*k,s=bs*DPR;
  const bw=Math.ceil(w*s)+4,bh=Math.ceil(h*s)+4;if(bw<2||bh<2||sx<-300||sx>1900)return;
  if(actBuf.width<bw||actBuf.height<bh){actBuf.width=Math.max(bw,actBuf.width);actBuf.height=Math.max(bh,actBuf.height)}
  const x=actCtx;x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';x.globalAlpha=1;x.clearRect(0,0,bw,bh);
  x.setTransform(s,0,0,s,-x0*s,-y0*s);
- a.type==='boy'?drawBoy(x,a):a.type==='wendy'?drawWendy(x,a,t):drawWoman(x,a,t);
+ a.type==='boy'?drawBoy(x,a):a.type==='wendy'?drawWendy(x,a,t):a.type==='twins'?drawTwins(x,a,t):drawWoman(x,a,t);
  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-atop';x.globalAlpha=1;
  x.fillStyle=x.createPattern(texDark,'repeat');x.fillRect(0,0,bw,bh);
  x.fillStyle=x.createPattern(texLight,'repeat');x.fillRect(0,0,bw,bh);
@@ -706,10 +746,43 @@ function drawActorPainted(c,a,t){
  g=x.createLinearGradient(0,0,0,bh);g.addColorStop(0,'rgba(170,200,235,.10)');g.addColorStop(1,'rgba(40,18,8,.22)');x.fillStyle=g;x.fillRect(0,0,bw,bh);
  x.globalCompositeOperation='source-over';
  const blur=a.type==='woman'?.6:.5;
- const wa=a.type==='wendy'?wendyAlpha(a):1;if(wa<=0)return;
+ const wa=a.type==='wendy'?wendyAlpha(a):a.type==='twins'?twinsAlpha(a):1;if(wa<=0)return;
  c.save();c.filter='blur('+(blur*DPR).toFixed(2)+'px)';
  c.globalAlpha=wa;c.drawImage(actBuf,0,0,bw,bh,x0,y0,bw/s,bh/s);c.restore();
 }
+function drawTwins(c,a,t){
+ // two identical girls, pale blue dresses, holding hands, facing us, perfectly still
+ const [px,py,k]=actorPos(a);c.save();c.translate(px,py);c.scale(k,k);
+ c.fillStyle='rgba(10,4,2,.38)';c.beginPath();c.ellipse(0,0,.6,.06,0,0,7);c.fill();
+ const breathe=Math.sin(t*1.1)*.004;
+ for(const side of[-1,1]){const cx=side*.27;c.save();c.translate(cx,0);
+  // legs, white socks, black Mary Janes
+  for(const lx of[-.06,.06]){c.fillStyle='#e9e3da';c.strokeStyle=INK;c.lineWidth=.014;c.fillRect(lx-.03,-.42,.06,.4);c.strokeRect(lx-.03,-.42,.06,.4);
+   c.fillStyle='#d9cfc2';c.fillRect(lx-.032,-.2,.064,.06);c.fillStyle='#120c0a';c.beginPath();c.ellipse(lx,-.015,.05,.028,0,0,7);c.fill()}
+  // dress: pale blue, puffed sleeves, white collar, waist bow
+  c.fillStyle='#a9c6dc';c.strokeStyle=INK;c.lineWidth=.016;
+  poly(c,[[-.2,-.4],[-.13,-.86+breathe],[.13,-.86+breathe],[.2,-.4],[.12,-.37],[-.12,-.37]]);c.fill();c.stroke();
+  c.fillStyle='rgba(255,255,255,.22)';poly(c,[[-.16,-.42],[-.1,-.84],[-.02,-.84],[-.06,-.4]]);c.fill();
+  c.fillStyle='rgba(40,60,90,.18)';poly(c,[[.06,-.4],[.08,-.84],[.13,-.84],[.19,-.41]]);c.fill();
+  c.fillStyle='#8fb0c8';c.fillRect(-.135,-.66,.27,.035);
+  c.fillStyle='#b4cfe2';c.strokeStyle=INK;for(const sx of[-1,1]){c.beginPath();c.ellipse(sx*.15,-.83+breathe,.06,.05,0,0,7);c.fill();c.stroke()}
+  c.fillStyle='#f4f1ea';c.beginPath();c.moveTo(-.08,-.87);c.lineTo(0,-.82);c.lineTo(.08,-.87);c.lineTo(.05,-.9);c.lineTo(-.05,-.9);c.closePath();c.fill();
+  // arms: inner arms reach to hold hands, outer arm hangs straight
+  const outer=-side;limb(c,[outer*.15,-.82],[outer*.17,-.55],.05,'#ead6c4');
+  limb(c,[-outer*.15,-.82],[-outer*.24,-.58],.05,'#ead6c4');
+  // head: pale face, straight brown bob with bangs, staring eyes
+  c.fillStyle='#4a2c1a';c.beginPath();c.ellipse(0,-1.04,.13,.15,0,0,7);c.fill();
+  c.fillStyle='#efdccb';c.strokeStyle=INK;c.lineWidth=.014;c.beginPath();c.ellipse(0,-1.02,.095,.115,0,0,7);c.fill();c.stroke();
+  c.fillStyle='#4a2c1a';c.beginPath();c.moveTo(-.11,-1.08);c.quadraticCurveTo(0,-1.2,.11,-1.08);c.lineTo(.1,-1.05);c.lineTo(-.1,-1.05);c.closePath();c.fill();
+  c.fillRect(-.135,-1.06,.04,.17);c.fillRect(.095,-1.06,.04,.17);
+  c.fillStyle='#8fb0c8';c.beginPath();c.ellipse(.07,-1.14,.035,.02,.4,0,7);c.fill();
+  c.fillStyle='#16100c';for(const ex of[-.035,.035]){c.beginPath();c.ellipse(ex,-1.02,.014,.017,0,0,7);c.fill()}
+  c.strokeStyle='rgba(90,30,25,.7)';c.lineWidth=.01;c.beginPath();c.moveTo(-.02,-.965);c.lineTo(.02,-.965);c.stroke();
+  c.fillStyle='rgba(200,120,120,.18)';for(const ex of[-.055,.055]){c.beginPath();c.arc(ex,-.985,.02,0,7);c.fill()}
+  c.restore()}
+ // the joined hands between them
+ c.fillStyle='#ead6c4';c.strokeStyle=INK;c.lineWidth=.012;c.beginPath();c.arc(0,-.575,.035,0,7);c.fill();c.stroke();
+ c.restore()}
 function wendyAlpha(a){const w=a.ws||wendyState(a);if(w.kind==='floor')return clamp(a.t/.6,0,1);if(w.kind==='landing')return clamp(1-(w.u-.25)/.75,0,1);return 1}
 function drawWendy(c,a,t){
  // feet at origin, metres; she faces left (down the stairs) while backing up to the right
@@ -864,7 +937,7 @@ function renderBGImage(dt,t){
   for(const s of SNOW){if(!s.w){s.w=1;s.x=rand(sx0,sx1);s.y=rand(sy0,sy1)}
    s.y+=(34+s.z*70)*dt;s.x+=(wind*(.5+s.z)+Math.sin(t*1.3+s.ph)*7*s.z)*dt;if(s.y>sy1){s.y=sy0;s.x=rand(sx0,sx1)}if(s.x>sx1)s.x=sx0;if(s.x<sx0)s.x=sx1;
    if(RM)s.y-=(17+s.z*35)*dt;x.globalAlpha=SNOWDBG?1:.38+s.z*.55;const r=(1.1+s.z*2.4)*(SNOWDBG?5:1)*SNOWK;x.fillRect(s.x+ox-r/2,s.y+oy-r/2,r,r);if(s.z>.55&&!SNOWDBG){x.globalAlpha*=.35;x.fillRect(s.x+ox-r/2,s.y+oy-r*2.2,r,r*1.7)}}
-  x.globalAlpha=1;x.globalCompositeOperation='destination-in';x.drawImage(snowMask,ix+ox,iy+oy,iw,ih);x.globalCompositeOperation='source-over';
+  x.globalAlpha=1;if(boltLv>.01)drawBolt(x,ox,oy);x.globalCompositeOperation='destination-in';x.drawImage(snowMask,ix+ox,iy+oy,iw,ih);x.globalCompositeOperation='source-over';
   c.save();c.setTransform(1,0,0,1,0,0);c.drawImage(snC,0,0);c.restore()}
  c.globalAlpha=1;
  const sorted=actors.slice().sort((a,b)=>(a.type==='woman')-(b.type==='woman'));
@@ -1029,7 +1102,7 @@ const TOUCHUI=Q.has('touch')||matchMedia('(pointer:coarse)').matches||('ontouchs
 let kbdWanted=false,shiftOn=false,LANG_HE=true;try{LANG_HE=localStorage.getItem('ovl_lang')!=='en'}catch(e){}
 const now0=()=>performance.now();
 app.classList.toggle('touch',TOUCHUI);
-const hint=$('#hint');if(TOUCHUI)hint.textContent='הקלידו על מקשי המכונה · עב/EN להחלפת שפה';
+const hint=$('#hint');const flashEl=$('#flash');if(TOUCHUI)hint.textContent='הקלידו על מקשי המכונה · עב/EN להחלפת שפה';
 function begin(){if(!started){started=true;hint.classList.add('gone')}initAudio()}
 const pending=[];
 let flushing=false;
@@ -1172,7 +1245,7 @@ refocus();
 scheduleNext(true);
 requestAnimationFrame(t=>{lastT=t;frame(t)});
 if(DEMO){const tag=document.createElement('div');tag.id='demoTag';tag.textContent='DEMO MODE';$('#ui').appendChild(tag)}
-window.OVERLOOK={CAL,bgMode:()=>bgImg?'image':'procedural',tapAudio:()=>{initAudio();const d=AC.createMediaStreamDestination();compNode.connect(d);return d.stream},audioState:()=>AC?AC.state:'none',boy:spawnBoy,woman:spawnWoman,wendy:spawnWendy,tapKey,keyAt,keyPos:c=>{const r=app.getBoundingClientRect();const K=c==='Lang'?LANGK:c==='Space'?{x:700,y:795}:KEYS[c];return K?[r.left+stX+K.x*fs,r.top+stY+K.y*fs,(K.r||12)*fs]:null},lang:()=>LANG_HE?'he':'en',allWork,pdf:paperPDF,type:s=>{for(const ch of s)ch==='\n'?carriageReturn():typeChar(ch)},
+window.OVERLOOK={CAL,bgMode:()=>bgImg?'image':'procedural',tapAudio:()=>{initAudio();const d=AC.createMediaStreamDestination();compNode.connect(d);return d.stream},audioState:()=>AC?AC.state:'none',boy:spawnBoy,woman:spawnWoman,wendy:spawnWendy,twins:spawnTwins,tapKey,keyAt,keyPos:c=>{const r=app.getBoundingClientRect();const K=c==='Lang'?LANGK:c==='Space'?{x:700,y:795}:KEYS[c];return K?[r.left+stX+K.x*fs,r.top+stY+K.y*fs,(K.r||12)*fs]:null},lang:()=>LANG_HE?'he':'en',allWork,pdf:paperPDF,type:s=>{for(const ch of s)ch==='\n'?carriageReturn():typeChar(ch)},
  dbg:()=>({W,H,iw:innerWidth,ih:innerHeight,vvh:visualViewport&&visualViewport.height,fs,fy,stY,fullH}),state:()=>({lines:lines.map(l=>({dir:l.dir,text:l.textContent})),actors:actors.map(a=>a.type+':'+(a.X!==undefined?a.X:a.t).toFixed(1)),scr:actors.map(a=>{const p=actorPos(a);return[a.type,Math.round(p[0]*bs+bx-cam.x*CAL.par*bs),Math.round(p[1]*bs+by),Math.round(p[2]*bs)]})})};
 })();
 </script>
